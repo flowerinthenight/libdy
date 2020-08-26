@@ -28,5 +28,5 @@ jobs:
             dep ensure
         fi
 
-    - name: Test
+    - name: Run go test
       run: go test -v .

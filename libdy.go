@@ -182,6 +182,42 @@ func ScanItems(svc *dynamodb.DynamoDB, table string, limit ...int64) ([]map[stri
 	return ret, nil
 }
 
+func PutItem(svc *dynamodb.DynamoDB, table string, item map[string]*dynamodb.AttributeValue) error {
+	start := time.Now()
+	var rerr, err error
+
+	// Our retriable function.
+	op := func() error {
+		_, err = svc.PutItem(&dynamodb.PutItemInput{
+			TableName: aws.String(table),
+			Item:      item,
+		})
+
+		rerr = err
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				case dynamodb.ErrCodeProvisionedThroughputExceededException:
+					return err // will cause retry with backoff
+				}
+			}
+		}
+
+		return nil // final err is rerr
+	}
+
+	err = backoff.Retry(op, backoff.NewExponentialBackOff())
+	if err != nil {
+		return fmt.Errorf("PutItem failed after %v: %w", time.Since(start), err)
+	}
+
+	if rerr != nil {
+		return fmt.Errorf("PutItem failed: %w", rerr)
+	}
+
+	return nil
+}
+
 func DeleteItem(svc *dynamodb.DynamoDB, table, pk, sk string) error {
 	v1 := strings.Split(pk, ":")
 	v2 := strings.Split(sk, ":")
